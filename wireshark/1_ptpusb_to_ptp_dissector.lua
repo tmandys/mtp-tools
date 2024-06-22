@@ -87,7 +87,14 @@ function ptpusb_proto.dissector(tvb,pinfo,tree)
 			subtree:add_le(ptpusb.packet_type,  PTPIP_PACKETTYPE.DATA_PACKET)
 			return
 		end
-		local subtree = tree:add(ptpusb_proto, ptp_tvb, "PTP/USB: " .. PTP_PACKETTYPENAMES[ptype])
+		print(ptp_tvb)
+		local packet_type_name = PTP_PACKETTYPENAMES[ptype]
+		local subtree
+		if packet_type_name then
+			subtree = tree:add(ptpusb_proto, ptp_tvb, "PTP/USB: " .. PTP_PACKETTYPENAMES[ptype])
+		else
+			subtree = tree:add(ptpusb_proto, ptp_tvb)
+		end
 		subtree:add_le(ptpusb.ptype, ptype_tvb)
 		
 		-- mtp postdissector:
@@ -95,6 +102,7 @@ function ptpusb_proto.dissector(tvb,pinfo,tree)
 		subtree:add_le(ptpusb.length, plen_tvb)
 		subtree:add_le(ptpusb.transaction_id,   tid_tvb)
 		subtree:add_le(ptpusb.packet_code, code_tvb)
+		local r_type
 		if is_from_host then 
 			local request_types = {
 				[PTP_PACKETTYPE.CMD]  = PTPIP_PACKETTYPE.CMD_REQUEST,
@@ -102,7 +110,7 @@ function ptpusb_proto.dissector(tvb,pinfo,tree)
 				[PTP_PACKETTYPE.ACK]  = PTPIP_PACKETTYPE.INVALID,
 				[PTP_PACKETTYPE.EVENT]= PTPIP_PACKETTYPE.INVALID
 			}
-			subtree:add_le(ptpusb.packet_type,   request_types[ptype] )
+			r_type = request_types[ptype]
 		else
 			local response_types = {
 				[PTP_PACKETTYPE.CMD]  = PTPIP_PACKETTYPE.INVALID,
@@ -110,9 +118,11 @@ function ptpusb_proto.dissector(tvb,pinfo,tree)
 				[PTP_PACKETTYPE.ACK]  = PTPIP_PACKETTYPE.CMD_RESPONSE,
 				[PTP_PACKETTYPE.EVENT]= PTPIP_PACKETTYPE.EVENT
 			}
-			subtree:add_le(ptpusb.packet_type,   response_types[ptype] )
+			r_type = response_types[ptype]
 		end
-					
+		if r_type then
+			subtree:add_le(ptpusb.packet_type,   r_type)		
+		end
 		-- dump remaining parameters:
 		local offset = 12
 		local stop  = size

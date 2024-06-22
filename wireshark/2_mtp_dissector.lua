@@ -352,6 +352,7 @@ local MTP_RESPONSE_PARAMETERS = {
 }
 
 
+
 -- Event names and types
     local MTP_EVENT_DESCRIPTIONS = {
     [0x4000] = 'UNDEFINED',
@@ -1004,7 +1005,7 @@ local CANON_EXTENSIONS = {
         [0xD1df] = 'EOS_CADarkBright',
     },
 
-    ['EventCode'] = {
+    ['EventCodeDescriptions'] = {
         [0xC008] = 'ObjectInfoChanged',
         [0xC009] = 'RequestObjectTransfer',
         [0xC00B] = 'ShutterButtonPressed0',
@@ -1338,7 +1339,7 @@ local MTP_EXTENSIONS = {
         [0xD413] = 'PlaybackPosition',
     },
 
-    ['EventCode'] = {
+    ['EventCodeDescriptions'] = {
         [0xC801] = 'ObjectPropChanged',
         [0xC802] = 'ObjectPropDescChanged',
         [0xC803] = 'ObjectReferencesChanged',
@@ -1884,9 +1885,14 @@ local SONY_EXTENSIONS = {
         [0xD216] = 'ExposeIndex',
         [0xD21B] = 'PictureEffect',
         [0xD21C] = 'ABFilter',
-    },
-
-    ['EventCode'] = {
+		[0xD21E] = 'ISO',
+		[0xD2C1] = 'AutoFocus',
+		[0xD2C2] = 'Capture',
+		[0xD2C8] = 'Movie',
+		[0xD2C7] = 'StillImage',
+    },	
+	
+    ['EventCodeDescriptions'] = {
         [0xC201] = 'ObjectAdded',
         [0xC202] = 'ObjectRemoved',
         [0xC203] = 'PropertyChanged',
@@ -1904,6 +1910,7 @@ local SONY_EXTENSIONS = {
         [0x9205] = 'SetControlDeviceA',
         [0x9206] = 'GetControlDeviceDesc',
         [0x9207] = 'SetControlDeviceB',
+		[0x9209] = 'GetAllDevicePropData',
     },
 
 }
@@ -1995,16 +2002,29 @@ local DEBUG = debug_level.LEVEL_1
 local default_settings =
 {
     debug_level  = DEBUG,
-    camera_vendor = VENDORS.UNKNOWN
+    camera_vendor = VENDORS.SONY
 }
 
+function dump(o)
+   if type(o) == 'table' then
+      local s = '{ '
+      for k,v in pairs(o) do
+         if type(k) ~= 'number' then k = '"'..k..'"' end
+         s = s .. '['..k..'] = ' .. dump(v) .. ','
+      end
+      return s .. '} '
+   else
+      return tostring(o)
+   end
+end
 
 local dprint = function() end
 local dprint2 = function() end
 local function resetDebugLevel()
     if default_settings.debug_level > debug_level.DISABLED then
         dprint = function(...)
-            info(table.concat({"Lua: ", ...}," "))
+            --info(table.concat({"Lua: ", ...}," "))
+			print(table.concat({"Lua: ", ...}," "))
         end
 
         if default_settings.debug_level > debug_level.LEVEL_1 then
@@ -2049,7 +2069,7 @@ function dissect_operation_request(tvb, pinfo, tree, length)
 	local subtree = tree:add(ptp_proto,tvb(), proto_title )
 	if not opcode_desc then
         dprint( 'Unknown opcode' .. code )
-        opcode_desc = 'Unknown'
+        opcode_desc = 'Unknown' .. string.format( ' 0x%04X (', code )
     end
 
     local label =  'OpCode: ' .. string.format( '0x%04X (', code ) .. opcode_desc .. ')'
@@ -2118,7 +2138,7 @@ function dissect_event(tvb, pinfo, tree, length)
 	if code_desc then
 		subtree:add( hdr_fields.event_code, code, "Code: " .. code_desc .. string.format( ' (0x%04x)', code ) )
 	else
-		dprint( 'Unknown opcode' .. code )
+		dprint( 'Unknown opcode' .. code)
 		subtree:add(hdr_fields.event_code, code)
 	end
 
@@ -2175,7 +2195,10 @@ local MTP_DISSECTORS = {
 function ptp_proto.dissector(tvb,pinfo,tree)
 
    -- pinfo.cols.protocol = "PTP"
-   local packet_type = parent_packet_type_field()()
+   local packet_type = parent_packet_type_field()
+   if packet_type then
+		packet_type = packet_type()
+   end
    local ptp_length = parent_length_field()()
    local offset_field = parent_header_offset_field()
    local offset
@@ -2309,11 +2332,22 @@ ptp_proto.prefs.vendor      = Pref.enum("Camera vendor", default_settings.camera
 ----------------------------------------
 -- the function for handling preferences being changed
 function ptp_proto.prefs_changed()
-    dprint2("prefs_changed called")
+    dprint2("proto.prefs_changed called")
+    do_init()
+	default_settings.camera_vendor = ptp_proto.prefs.vendor
+    default_settings.debug_level = ptp_proto.prefs.debug
+    resetDebugLevel()	
+end
 
+function do_init()
 	default_settings.camera_vendor = ptp_proto.prefs.vendor
     default_settings.debug_level = ptp_proto.prefs.debug
     resetDebugLevel()
-
     mtp_lookup_tables = combine_lookup( mtp_lookup, VENDOR_EXTENSIONS[default_settings.camera_vendor] )
+	dprint( 'Lookuptables: '..dump(mtp_lookup_tables['EventCodeDescriptions']))
+end
+
+function ptp_proto.init()
+    dprint2("proto.init called")
+    do_init()
 end
